@@ -19,6 +19,7 @@ package com.facebook.buck.android;
 import static com.google.common.collect.Ordering.natural;
 
 import com.facebook.buck.android.aapt.RDotTxtEntry;
+import com.facebook.buck.android.aapt.RDotTxtEntry.IdType;
 import com.facebook.buck.android.aapt.RDotTxtEntry.RType;
 import com.facebook.buck.io.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
@@ -46,6 +47,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -318,6 +320,9 @@ public class MergeAndroidResourcesStep implements Step {
     SortedSetMultimap<String, RDotTxtEntry> rDotJavaPackageToSymbolsFiles = TreeMultimap.create();
     SortedSetMultimap<RDotTxtEntry, Path> bannedDuplicateResourceToSymbolsFiles =
         TreeMultimap.create();
+
+    HashMap<RDotTxtEntry, String> resourceToIdValuesMap = new HashMap<>();
+
     for (Map.Entry<Path, String> entry : symbolsFileToRDotJavaPackage.entrySet()) {
       Path symbolsFile = entry.getKey();
       // Read the symbols file and parse each line as a Resource.
@@ -332,15 +337,12 @@ public class MergeAndroidResourcesStep implements Step {
       }
 
       String packageName = entry.getValue();
-      for (String line : linesInSymbolsFile) {
-        Optional<RDotTxtEntry> parsedEntry = RDotTxtEntry.parse(line);
-        Preconditions.checkState(parsedEntry.isPresent(), "Should be able to match '%s'.", line);
 
-        // We're only doing the remapping so Roboelectric is happy and it is already ignoring the
-        // id references found in the styleable section.  So let's do that as well so we don't have
-        // to get fancier than is needed.  That is, just re-enumerate all app-level resource ids
-        // and ignore everything else, allowing the styleable references to be messed up.
-        RDotTxtEntry resource = parsedEntry.get();
+      int index = 0;
+      while (index < linesInSymbolsFile.size()) {
+        RDotTxtEntry resource = getResourceAtIndex(linesInSymbolsFile, index);
+        index++;
+
         if (uberRDotTxtIds.isPresent()) {
           Preconditions.checkNotNull(finalIds);
           if (!finalIds.containsKey(resource)) {
@@ -348,10 +350,64 @@ public class MergeAndroidResourcesStep implements Step {
             continue;
           }
           resource = resource.copyWithNewIdValue(finalIds.get(resource));
-        } else if (resource.idValue.startsWith("0x7f")) {
-          Preconditions.checkNotNull(enumerator);
-          resource = resource.copyWithNewIdValue(String.format("0x%08x", enumerator.next()));
+        } else {
+          if (resourceToIdValuesMap.get(resource) != null) {
+            resource = resource.copyWithNewIdValue(resourceToIdValuesMap.get(resource));
+          } else {
+
+            if (resource.idType == IdType.INT_ARRAY &&
+                resource.type == RType.STYLEABLE) {
+
+              List<String> styleableIdValues = new ArrayList<>();
+              int styleableIndex = 0;
+
+              while (styleableIndex + index < linesInSymbolsFile.size()) {
+                RDotTxtEntry styleableResource = getResourceAtIndex(linesInSymbolsFile,
+                    styleableIndex + index);
+
+                if (styleableResource.idType == IdType.INT &&
+                    styleableResource.type == RType.STYLEABLE &&
+                    styleableResource.name.startsWith(resource.name)) {
+
+                  String attrName = styleableResource.name.substring(
+                      styleableResource.name.indexOf('_') + 1);
+                  RDotTxtEntry attrResource = new RDotTxtEntry(
+                      IdType.INT, RType.ATTR, attrName, "");
+
+                  String attrIdValue = resourceToIdValuesMap.get(attrResource);
+                  if (attrIdValue != null) {
+                    styleableIdValues.add(attrIdValue);
+                  } else {
+                    // If not value is found just put the index.
+                    // The attribute is coming from android R.java
+                    styleableIdValues.add(String.valueOf(styleableIndex));
+                  }
+
+                  // Add int styleable resources to the cache
+                  resourceToIdValuesMap.put(styleableResource, String.valueOf(styleableIndex));
+                  styleableIndex++;
+
+                } else {
+                  break;
+                }
+              }
+
+              // int[] styleable entry is not added to the cache as
+              // the number of child can differ in dependent libraries
+              resource = resource.copyWithNewIdValue(String.format(
+                  "{ %s }",
+                  Joiner.on(RDotTxtEntry.INT_ARRAY_SEPARATOR).join(styleableIdValues)));
+
+            } else {
+              Preconditions.checkNotNull(enumerator);
+              resource = resource.copyWithNewIdValue(String.format("0x%08x", enumerator.next()));
+
+              // Add resource to cache so that the id value is consistent across all R.txt
+              resourceToIdValuesMap.put(resource, resource.idValue);
+            }
+          }
         }
+
         if (bannedDuplicateResourceTypes.contains(resource.type)) {
           bannedDuplicateResourceToSymbolsFiles.put(resource, symbolsFile);
         }
@@ -383,6 +439,15 @@ public class MergeAndroidResourcesStep implements Step {
     }
 
     return rDotJavaPackageToSymbolsFiles;
+  }
+
+  private static RDotTxtEntry getResourceAtIndex(List<String> linesInSymbolsFile, int index) {
+    String line = linesInSymbolsFile.get(index);
+
+    Optional<RDotTxtEntry> parsedEntry = RDotTxtEntry.parse(line);
+    Preconditions.checkState(parsedEntry.isPresent(), "Should be able to match '%s'.", line);
+
+    return parsedEntry.get();
   }
 
   @Override

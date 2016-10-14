@@ -23,6 +23,7 @@ import com.facebook.buck.android.RobolectricTestDescription;
 import com.facebook.buck.cxx.CxxLibraryDescription;
 import com.facebook.buck.jvm.groovy.GroovyLibraryDescription;
 import com.facebook.buck.jvm.groovy.GroovyTestDescription;
+import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibraryDescription;
 import com.facebook.buck.jvm.java.JavaTestDescription;
 import com.facebook.buck.jvm.java.JavacOptions;
@@ -72,6 +73,8 @@ public class IjModuleFactory {
 
   public static final Predicate<TargetNode<?>> SUPPORTED_MODULE_TYPES_PREDICATE =
       input -> SUPPORTED_MODULE_TYPES.contains(input.getType());
+  public static final String DEFAULT_ANDROID_SDK_TYPE = "Android SDK";
+  public static final String DEFAULT_JAVA_SDK_TYPE = "JavaSDK";
 
   /**
    * Provides the {@link IjModuleFactory} with {@link Path}s to various elements of the project.
@@ -291,11 +294,10 @@ public class IjModuleFactory {
     void apply(TargetNode<T> targetNode, ModuleBuildContext context);
   }
 
-  private static final String SDK_TYPE_JAVA = "JavaSDK";
-
   private final Map<BuildRuleType, IjModuleRule<?>> moduleRuleIndex = new HashMap<>();
   private final IjModuleFactoryResolver moduleFactoryResolver;
   private final IjProjectConfig projectConfig;
+  private final IntellijConfig intellijConfig;
   private final boolean excludeShadows;
   private final boolean autogenerateAndroidFacetSources;
 
@@ -305,9 +307,11 @@ public class IjModuleFactory {
   public IjModuleFactory(
       IjModuleFactoryResolver moduleFactoryResolver,
       IjProjectConfig projectConfig,
+      IntellijConfig intellijConfig,
       boolean excludeShadows) {
     this.excludeShadows = excludeShadows;
     this.projectConfig = projectConfig;
+    this.intellijConfig = intellijConfig;
     this.autogenerateAndroidFacetSources = projectConfig.isAutogenerateAndroidFacetSourcesEnabled();
 
     addToIndex(new AndroidBinaryModuleRule());
@@ -357,18 +361,6 @@ public class IjModuleFactory {
       rule.apply((TargetNode) targetNode, context);
     }
 
-    Optional<String> sourceLevel = getSourceLevel(targetNodes);
-    // The only JDK type that is supported right now. If we ever add support for Android libraries
-    // to have different language levels we need to add logic to detect correct JDK type.
-    String sdkType = SDK_TYPE_JAVA;
-
-    Optional<String> sdkName;
-    if (sourceLevel.isPresent()) {
-      sdkName = getSdkName(sourceLevel.get(), sdkType);
-    } else {
-      sdkName = Optional.absent();
-    }
-
     return IjModule.builder()
         .setModuleBasePath(moduleBasePath)
         .setTargets(targetNodes)
@@ -377,36 +369,60 @@ public class IjModuleFactory {
         .setAndroidFacet(context.getAndroidFacet())
         .addAllExtraClassPathDependencies(context.getExtraClassPathDependencies())
         .addAllGeneratedSourceCodeFolders(context.getGeneratedSourceCodeFolders())
-        .setSdkName(sdkName)
-        .setSdkType(sdkType)
-        .setLanguageLevel(sourceLevel)
+        .setJdk(getJdk(projectConfig.getJavaBuckConfig(), targetNodes, context.getAndroidFacet().isPresent()))
         .build();
   }
 
-  private Optional<String> getSourceLevel(
-      Iterable<TargetNode<?>> targetNodes) {
-    Optional<String> result = Optional.absent();
+  private IjModuleJdk getJdk(JavaBuckConfig javaBuckConfig, Iterable<TargetNode<?>> targetNodes, boolean hasAndroid) {
+    ImmutableSortedSet.Builder<String> languageLevelBuilder = new ImmutableSortedSet.Builder<>(Ordering.<String>natural());
+    JavacOptions defaultJavacOptions = javaBuckConfig.getDefaultJavacOptions();
+    String defaultSourceLevel = defaultJavacOptions.getSourceLevel();
+    String defaultTargetLevel = defaultJavacOptions.getTargetLevel();
+    Optional<String> chosenJdkName = Optional.absent();
+
     for (TargetNode<?> targetNode : targetNodes) {
       BuildRuleType type = targetNode.getType();
-      if (!type.equals(JavaLibraryDescription.TYPE)) {
-        continue;
-      }
-
-      JavacOptions defaultJavacOptions = projectConfig.getJavaBuckConfig().getDefaultJavacOptions();
-      String defaultSourceLevel = defaultJavacOptions.getSourceLevel();
-      String defaultTargetLevel = defaultJavacOptions.getTargetLevel();
-      JavaLibraryDescription.Arg arg = (JavaLibraryDescription.Arg) targetNode.getConstructorArg();
-      if (!defaultSourceLevel.equals(arg.source.or(defaultSourceLevel)) ||
-          !defaultTargetLevel.equals(arg.target.or(defaultTargetLevel))) {
-        result = arg.source;
+      if (hasAndroid && AndroidLibraryDescription.TYPE.equals(type)) {
+        AndroidLibraryDescription.Arg androidArg = (AndroidLibraryDescription.Arg) targetNode.getConstructorArg();
+        if (androidArg.source.isPresent()) {
+          languageLevelBuilder.add(androidArg.source.get());
+        }
+      } else if (!hasAndroid && JavaLibraryDescription.TYPE.equals(type)) {
+        JavaLibraryDescription.Arg javaArg = (JavaLibraryDescription.Arg) targetNode.getConstructorArg();
+        if (javaArg.source.isPresent()) {
+          languageLevelBuilder.add(javaArg.source.get());
+          if (!defaultSourceLevel.equals(javaArg.source.or(defaultSourceLevel)) ||
+              !defaultTargetLevel.equals(javaArg.target.or(defaultTargetLevel))) {
+            chosenJdkName = javaArg.source;
+          }
+        }
       }
     }
 
-    if (result.isPresent()) {
-      result = Optional.of(normalizeSourceLevel(result.get()));
+    ImmutableSortedSet<String> languageLevels = languageLevelBuilder.build();
+    String chosenLanguageLevel = !languageLevels.isEmpty() ? languageLevels.first() : defaultSourceLevel;
+    String chosenJdkType;
+
+    if (hasAndroid) {
+      chosenJdkName = intellijConfig.getAndroidSdkName();
+      chosenJdkType = intellijConfig.getAndroidSdkType().or(DEFAULT_ANDROID_SDK_TYPE);
+    } else {
+      if (chosenJdkName.isPresent()) {
+        chosenJdkName = Optional.of(normalizeSourceLevel(chosenJdkName.get()));
+      }
+
+      chosenJdkName = chosenJdkName.or(intellijConfig.getJdkName());
+      chosenJdkType = intellijConfig.getJdkType().or(DEFAULT_JAVA_SDK_TYPE);
     }
 
-    return result;
+    String[] parts = chosenLanguageLevel.split("\\.");
+    chosenLanguageLevel = String.format("JDK_1_%s", parts[parts.length - 1]);
+
+    return IjModuleJdk.builder()
+        .setMinJdkLevel(chosenLanguageLevel)
+        .setJdkName(chosenJdkName)
+        .setJdkType(chosenJdkType)
+        .build();
   }
 
   /**
@@ -418,14 +434,6 @@ public class IjModuleFactory {
     } else {
       return jdkVersion;
     }
-  }
-
-  private Optional<String> getSdkName(String sourceLevel, String sdkType) {
-    Optional<String> sdkName = Optional.absent();
-    if (SDK_TYPE_JAVA.equals(sdkType)) {
-      sdkName = projectConfig.getJavaLibrarySdkNameForSourceLevel(sourceLevel);
-    }
-    return sdkName.isPresent() ? sdkName : Optional.of(sourceLevel);
   }
 
   /**

@@ -27,8 +27,8 @@
     </facet>
   </component>
 %endif%
-%if(languageLevel)%
-  <component name="NewModuleRootManager" LANGUAGE_LEVEL="%languageLevel%" inherit-compiler-output="true">
+%if(minJdkLevel)%
+  <component name="NewModuleRootManager" LANGUAGE_LEVEL="%minJdkLevel%" inherit-compiler-output="true">
 %else%
   <component name="NewModuleRootManager" inherit-compiler-output="true">
 %endif%
@@ -54,8 +54,8 @@
         %if(generatedFolder.isAndroidResources)% type="java-resource" %endif%/>
     </content>
 }%
-%if(sdk)%
-    <orderEntry type="jdk" jdkName="%sdk%" jdkType="%sdkType%" />
+%if(jdkName)%
+    <orderEntry type="jdk" jdkName="%jdkName%" jdkType="%jdkType%" />
 %else%
     <orderEntry type="inheritedJdk" />
 %endif%

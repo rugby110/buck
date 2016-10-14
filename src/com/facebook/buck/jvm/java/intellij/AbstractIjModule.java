@@ -82,13 +82,9 @@ abstract class AbstractIjModule implements IjProjectElement {
   public abstract ImmutableSet<IjFolder> getGeneratedSourceCodeFolders();
 
   /**
-   * @return JDK name defined for this module explicitly
+   * @return JDK language level, name and type
    */
-  public abstract Optional<String> getSdkName();
-
-  public abstract Optional<String> getSdkType();
-
-  public abstract Optional<String> getLanguageLevel();
+  public abstract Optional<IjModuleJdk> getJdk();
 
   /**
    * @return path where the XML describing the module to IntelliJ will be written to.

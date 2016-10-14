@@ -254,7 +254,7 @@ public class IjProjectDataPreparerTest {
                         Paths.get("java/com/example/base"),
                         true,
                         ImmutableSortedSet.of(baseTargetSrcFilePath)))
-                .setSdkType("JavaSDK")
+                .setJdk(IjModuleJdk.builder().setJdkType("JavaSDK").setMinJdkLevel("JDK_1_7").build())
                 .build(),
             IjModule.builder()
                 .setModuleBasePath(Paths.get(""))

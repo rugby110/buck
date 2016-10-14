@@ -213,6 +213,7 @@ public class IjProject {
         new IjModuleFactory(
             moduleFactoryResolver,
             projectConfig,
+            intellijConfig,
             excludeArtifacts),
         aggregationMode);
     JavaPackageFinder parsingJavaPackageFinder = ParsingJavaPackageFinder.preparse(

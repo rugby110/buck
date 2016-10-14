@@ -115,15 +115,15 @@ public class IjProjectWriter {
     moduleContents.add(
         "androidFacet",
         projectDataPreparer.getAndroidProperties(module));
-    moduleContents.add(
-        "sdk",
-        module.getSdkName().orNull());
-    moduleContents.add(
-        "sdkType",
-        module.getSdkType().orNull());
-    moduleContents.add(
-        "languageLevel",
-        module.getLanguageLevel().orNull());
+    Optional<IjModuleJdk> ijModuleJdk = module.getJdk();
+    if (ijModuleJdk.isPresent()) {
+      moduleContents.add(
+          "jdkName", ijModuleJdk.get().getJdkName().orNull());
+      moduleContents.add(
+          "jdkType", ijModuleJdk.get().getJdkType().orNull());
+      moduleContents.add(
+          "minJdkLevel", ijModuleJdk.get().getMinJdkLevel().orNull());
+    }
 
     writeToFile(moduleContents, path);
     return path;

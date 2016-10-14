@@ -494,9 +494,9 @@ public class IjModuleFactoryTest {
         moduleBasePath,
         ImmutableSet.of(java8Node));
 
-    assertThat(moduleWithDefault.getSdkName(), equalTo(Optional.<String>absent()));
-    assertThat(moduleWithJava8.getSdkName(), equalTo(Optional.of("1.8")));
-    assertThat(moduleWithJava8.getLanguageLevel(), equalTo(Optional.of("1.8")));
+    assertThat(moduleWithDefault.getJdk().get().getJdkType(), equalTo(Optional.of("JavaSDK")));
+    assertThat(moduleWithJava8.getJdk().get().getJdkName(), equalTo(Optional.of("1.8")));
+    assertThat(moduleWithJava8.getJdk().get().getMinJdkLevel(), equalTo(Optional.of("JDK_1_8")));
   }
 
   @Test
@@ -525,50 +525,10 @@ public class IjModuleFactoryTest {
         moduleBasePath,
         ImmutableSet.of(java8Node));
 
-    assertThat(moduleWithDefault.getSdkName(), equalTo(Optional.<String>absent()));
-    assertThat(moduleWithJava8.getSdkName(), equalTo(Optional.of("TestSDK")));
-    assertThat(moduleWithJava8.getLanguageLevel(), equalTo(Optional.of("1.8")));
-  }
-
-  @Test
-  public void testAndroidPrebuiltAar() {
-    final Path androidSupportBinaryPath = Paths.get("third_party/java/support/support.aar");
-    final Path androidSupportSourcesPath =
-        Paths.get("third_party/java/support/support-sources.jar");
-    final String androidSupportJavadocUrl = "file:///support/docs";
-    final TargetNode<?> androidPrebuiltAar = AndroidPrebuiltAarBuilder
-        .createBuilder(BuildTargetFactory.newInstance("//third_party/java/support:support"))
-        .setBinaryAar(androidSupportBinaryPath)
-        .setSourcesJar(androidSupportSourcesPath)
-        .setJavadocUrl(androidSupportJavadocUrl)
-        .build();
-
-    final BuildRuleResolver buildRuleResolver = new BuildRuleResolver(
-        TargetGraph.EMPTY,
-        new DefaultTargetNodeToBuildRuleTransformer());
-    final SourcePathResolver sourcePathResolver = new SourcePathResolver(buildRuleResolver);
-    DefaultIjLibraryFactory.IjLibraryFactoryResolver ijLibraryFactoryResolver =
-        new DefaultIjLibraryFactory.IjLibraryFactoryResolver() {
-          @Override
-          public Path getPath(SourcePath path) {
-            return sourcePathResolver.getRelativePath(path);
-          }
-
-          @Override
-          public Optional<Path> getPathIfJavaLibrary(TargetNode<?> targetNode) {
-            if (targetNode.equals(androidPrebuiltAar)) {
-              return Optional.of(androidSupportBinaryPath);
-            }
-            return Optional.absent();
-          }
-        };
-
-    Optional<IjLibrary> library = new DefaultIjLibraryFactory(ijLibraryFactoryResolver)
-        .getLibrary(androidPrebuiltAar);
-    assertTrue(library.isPresent());
-    assertEquals(library.get().getBinaryJar(), Optional.of(androidSupportBinaryPath));
-    assertEquals(library.get().getSourceJar(), Optional.of(androidSupportSourcesPath));
-    assertEquals(library.get().getJavadocUrl(), Optional.of(androidSupportJavadocUrl));
+    assertThat(moduleWithDefault.getJdk().get().getJdkName(), equalTo(Optional.<String>absent()));
+    assertThat(moduleWithJava8.getJdk().get().getJdkName(), equalTo(Optional.of("1.8")));
+    assertThat(moduleWithJava8.getJdk().get().getJdkType(), equalTo(Optional.of("JavaSDK")));
+    assertThat(moduleWithJava8.getJdk().get().getMinJdkLevel(), equalTo(Optional.of("JDK_1_8")));
   }
 
   private IjModuleFactory createIjModuleFactory() {
@@ -622,6 +582,9 @@ public class IjModuleFactoryTest {
         buckConfig == null
             ? IjProjectBuckConfig.create(FakeBuckConfig.builder().build())
             : IjProjectBuckConfig.create(buckConfig),
+        buckConfig == null
+            ? new IntellijConfig(FakeBuckConfig.builder().build())
+            : new IntellijConfig(buckConfig),
         false);
   }
 

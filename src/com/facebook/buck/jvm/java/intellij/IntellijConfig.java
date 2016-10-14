@@ -47,6 +47,14 @@ public class IntellijConfig {
     return delegate.getValue(sectionName, "output_url");
   }
 
+  public Optional<String> getAndroidSdkName() {
+    return delegate.getValue(sectionName, "android_sdk_name");
+  }
+
+  public Optional<String> getAndroidSdkType() {
+    return delegate.getValue(sectionName, "android_sdk_type");
+  }
+
   public Optional<Path> getAndroidManifest() {
     return delegate.getPath(sectionName, "default_android_manifest_path", false);
   }

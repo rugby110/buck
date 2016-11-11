@@ -24,6 +24,7 @@ import com.facebook.buck.io.BuckPaths;
 import com.facebook.buck.io.ProjectFilesystem;
 import com.facebook.buck.jvm.core.JavaPackageFinder;
 import com.facebook.buck.jvm.core.SuggestBuildRules;
+import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.rules.AbstractBuildRule;
@@ -97,6 +98,7 @@ public class DefaultJavaLibrary extends AbstractBuildRule
     SupportsInputBasedRuleKey, SupportsDependencyFileRuleKey, JavaLibraryWithTests {
 
   private static final BuildableProperties OUTPUT_TYPE = new BuildableProperties(LIBRARY);
+  private static final Logger LOG = Logger.get(DefaultJavaLibrary.class);
 
   @AddToRuleKey
   private final ImmutableSortedSet<SourcePath> srcs;
@@ -437,10 +439,13 @@ public class DefaultJavaLibrary extends AbstractBuildRule
         .transformAndConcat(JavaLibrary::getOutputClasspaths)
         .transform(projectFilesystem::resolve);
     // Only override the bootclasspath if this rule is supposed to compile Android code.
+    Path javaLib = Paths.get(System.getProperty("java.home")).resolve("lib");
+    LOG.debug("SEAN tools.jar classpath ==> " + javaLib.resolve("tools.jar"));
     ImmutableSortedSet<Path> declared = ImmutableSortedSet.<Path>naturalOrder()
         .addAll(declaredClasspaths)
         .addAll(additionalClasspathEntries)
-        .add(Paths.get(System.getProperty("java.home")).resolve("lib").resolve("rt.jar"))
+        .add(javaLib.resolve("rt.jar"))
+        .add(javaLib.resolve("tools.jar"))
         .addAll(provided)
         .build();
 
